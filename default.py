@@ -221,11 +221,15 @@ class Main:
                 for item in json_query['result']['tvshows']:
                     if xbmc.abortRequested:
                         break
-                    count += 1
-                    json_query2 = xbmc.executeJSONRPC('{"jsonrpc": "2.0", "method": "VideoLibrary.GetEpisodes", "params": {"tvshowid": %d, "properties": ["title", "playcount", "plot", "season", "episode", "showtitle", "file", "lastplayed", "rating", "resume", "art", "streamdetails"], "sort": {"method": "episode"}, "filter": {"field": "playcount", "operator": "is", "value": "0"}, "limits": {"end": 1}}, "id": 1}' %item['tvshowid'])
+                    #move this one level down or else we get duplicate items
+                    #count += 1
+                    #custom filter looks filters for episodes in playlist "Recommended"
+                    json_query2 = xbmc.executeJSONRPC('{"jsonrpc": "2.0", "method": "VideoLibrary.GetEpisodes", "params": {"tvshowid": %d, "properties": ["title", "playcount", "plot", "season", "episode", "showtitle", "file", "lastplayed", "rating", "resume", "art", "streamdetails"], "sort": {"method": "episode"}, "filter": {"and": [{"field": "playcount", "operator": "is", "value": "0"}, {"field": "playlist", "operator": "is", "value": "Recommended"}]}, "limits": {"end": 1}}, "id": 1}' %item['tvshowid'])
                     json_query2 = unicode(json_query2, 'utf-8', errors='ignore')
                     json_query2 = simplejson.loads(json_query2)
                     if json_query2.has_key('result') and json_query2['result'] != None and json_query2['result'].has_key('episodes'):
+                        #moved from above
+                        count += 1
                         for item2 in json_query2['result']['episodes']:
                             episode = ("%.2d" % float(item2['episode']))
                             season = "%.2d" % float(item2['season'])

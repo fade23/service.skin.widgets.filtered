@@ -212,23 +212,52 @@ class Main:
     def _fetch_tvshows_recommended(self, request):
         if not xbmc.abortRequested:
             # First unplayed episode of recent played tvshows
-            json_query = xbmc.executeJSONRPC('{"jsonrpc": "2.0", "method": "VideoLibrary.GetTVShows", "params": {"properties": ["title", "studio", "file", "art"], "sort": {"order": "descending", "method": "lastplayed"}, "filter": {"field": "inprogress", "operator": "true", "value": ""}, "limits": {"end": %d}}, "id": 1}' %self.LIMIT)
+            #rglass custom filter looks for episodes in playlist "Recommended"
+            json_query = xbmc.executeJSONRPC('{"jsonrpc": "2.0", "method": "VideoLibrary.GetTVShows", "params": {"properties": ["title", "studio", "file", "art"], "sort": {"order": "descending", "method": "lastplayed"}, "filter": {"and": [{"field": "inprogress", "operator": "true", "value": ""}, {"field": "path", "operator": "startswith", "value": "smb://TANK/Media/video/series/"}]}, "limits": {"end": %d}}, "id": 1}' %self.LIMIT)
             json_query = unicode(json_query, 'utf-8', errors='ignore')
-            json_query = simplejson.loads(json_query)
+            json_query = simplejson.loads(json_query)                      
+            
+            #rglass build dict of current seasons
+            datapath = os.path.join( xbmc.translatePath( "special://profile/addon_data/" ).decode('utf-8'), 'script.tv.show.next.aired' )
+            NEXTAIRED_DB = 'nextaired.db'
+            path = os.path.join( datapath, NEXTAIRED_DB )
+            complete_show_data = eval( file( path, "r" ).read() )
+            currentseasons = {}
+            for item in complete_show_data:
+                showname = item.get("Show Name")
+                showid = item.get("Show ID")
+                nextnumber = item.get("NextNumber","").split("x")
+                nextseason = nextnumber[0]
+                if showid != None:
+                    if nextnumber[0] == '':
+                        curseason = 999
+                    else:
+                        curseason = int(nextseason)
+                    currentseasons[showname] = curseason  
+
             if json_query['result'].has_key('tvshows'):
                 self._clear_properties(request)
                 count = 0
-                for item in json_query['result']['tvshows']:
+                for item in json_query['result']['tvshows']:                   
                     if xbmc.abortRequested:
                         break
-                    #move this one level down or else we get duplicate items
+                        
+                    #rglass move this one level down or else we get duplicate items
                     #count += 1
-                    #custom filter looks filters for episodes in playlist "Recommended"
-                    json_query2 = xbmc.executeJSONRPC('{"jsonrpc": "2.0", "method": "VideoLibrary.GetEpisodes", "params": {"tvshowid": %d, "properties": ["title", "playcount", "plot", "season", "episode", "showtitle", "file", "lastplayed", "rating", "resume", "art", "streamdetails"], "sort": {"method": "episode"}, "filter": {"and": [{"field": "playcount", "operator": "is", "value": "0"}, {"field": "playlist", "operator": "is", "value": "Recommended"}]}, "limits": {"end": 1}}, "id": 1}' %item['tvshowid'])
+                   
+                    #rglass limit the season to those that have already ended.
+                    if item['title'] in currentseasons:
+                        filterseason = currentseasons[item['title']]
+                    else:
+                        filterseason = 999
+
+
+                    #rglass custom filter looks for episodes in the series directory that are greater than season 0 and less than the currently airing season"
+                    json_query2 = xbmc.executeJSONRPC('{"jsonrpc": "2.0", "method": "VideoLibrary.GetEpisodes", "params": {"tvshowid": %d, "properties": ["title", "playcount", "plot", "season", "episode", "showtitle", "file", "lastplayed", "rating", "resume", "art", "streamdetails"], "sort": {"method": "episode"}, "filter": {"and": [{"field": "playcount", "operator": "is", "value": "0"}, {"field": "season", "operator": "greaterthan", "value": "0"}, {"field": "season", "operator": "lessthan", "value": "%f"}]}, "limits": {"end": 1}}, "id": 1}' %(item['tvshowid'], filterseason))
                     json_query2 = unicode(json_query2, 'utf-8', errors='ignore')
                     json_query2 = simplejson.loads(json_query2)
                     if json_query2.has_key('result') and json_query2['result'] != None and json_query2['result'].has_key('episodes'):
-                        #moved from above
+                        #rglass moved from above
                         count += 1
                         for item2 in json_query2['result']['episodes']:
                             episode = ("%.2d" % float(item2['episode']))
@@ -281,13 +310,17 @@ class Main:
             season_folders = __addon__.getSetting("randomitems_seasonfolders")
             json_string = '{"jsonrpc": "2.0", "id": 1, "method": "VideoLibrary.GetEpisodes", "params": { "properties": ["title", "playcount", "season", "episode", "showtitle", "plot", "file", "rating", "resume", "tvshowid", "art", "streamdetails"], "limits": {"end": %d},' %self.LIMIT
             if request == 'RecentEpisode' and self.RECENTITEMS_UNPLAYED:
-                json_query = xbmc.executeJSONRPC('%s "sort": {"order": "descending", "method": "dateadded"}, "filter": {"field": "playcount", "operator": "lessthan", "value": "1"}}}' %json_string)
+                #rglass filter by series.dailies directory
+                json_query = xbmc.executeJSONRPC('%s "sort": {"order": "ascending", "method": "path"}, "filter": {"and": [{"field": "playcount", "operator": "lessthan", "value": "1"}, {"field": "path", "operator": "startswith", "value": "smb://TANK/Media/video/series.dailies/"}, {"field": "airdate", "operator": "inthelast", "value": "30"}]}}}' %json_string)
             elif request == 'RecentEpisode':
-                json_query = xbmc.executeJSONRPC('%s "sort": {"order": "descending", "method": "dateadded"}}}' %json_string)
+                #rglass filter by series.dailies directory
+                json_query = xbmc.executeJSONRPC('%s "sort": {"order": "ascending", "method": "path"}, "filter": {"and": [{"field": "playcount", "operator": "lessthan", "value": "1"}, {"field": "path", "operator": "startswith", "value": "smb://TANK/Media/video/series.dailies/"}, {"field": "airdate", "operator": "inthelast", "value": "30"}]}}}' %json_string)
             elif request == 'RandomEpisode' and self.RANDOMITEMS_UNPLAYED:
-                json_query = xbmc.executeJSONRPC('%s "sort": {"method": "random" }, "filter": {"field": "playcount", "operator": "lessthan", "value": "1"}}}' %json_string)
+                #rglass filter by genre Z
+                json_query = xbmc.executeJSONRPC('%s "sort": {"method": "random" }, "filter": {"and": [{"field": "playcount", "operator": "lessthan", "value": "1"}, {"field": "genre", "operator": "is", "value": "Z"}]}}}' %json_string)
             else:
-                json_query = xbmc.executeJSONRPC('%s "sort": {"method": "random" }}}' %json_string)
+                #rglass filter by genre Z
+                json_query = xbmc.executeJSONRPC('%s "sort": {"method": "random" }, "filter": {"field": "genre", "operator": "is", "value": "Z"}}}' %json_string)
             json_query = unicode(json_query, 'utf-8', errors='ignore')
             json_query = simplejson.loads(json_query)
             if json_query['result'].has_key('episodes'):
